@@ -46,7 +46,7 @@ namespace SCUnshackled
                 "QOL",
                 "EnableAdvancedVariablesAtStart",
                 true,
-                "Whether advancedvariables should be enabled at the start"
+                "Whether advanced variables should be enabled at the start"
             );
             enableSupAdvVariables = config.Bind(
                 "QOL",
