@@ -72,19 +72,10 @@ namespace SCUnshackled
     public static class VariablePatchHelper
     {
 
-        // methods used in instructions
-        readonly private static MethodInfo stringUpper = typeof(string).GetMethod("ToUpper", new Type[] { });
-        readonly private static MethodInfo stringLength = typeof(string).GetMethod("get_Length");
-        readonly private static MethodInfo stringRemove = typeof(string).GetMethod("Remove", new Type[] { typeof(int), typeof(int) });
-        readonly private static MethodInfo stringConcat = typeof(string).GetMethod("Concat", new Type[] { typeof(string), typeof(string) });
-        readonly private static MethodInfo stringSub = typeof(string).GetMethod("Substring", new Type[] { typeof(int), typeof(int) });
-        readonly private static MethodInfo getValue = typeof(KeyValuePair<string, EventVariable>).GetMethod("get_Value");
-
-        readonly private static int Pair = 11; // address of the KeyValuePair<string, EventVariable> local variable inside of ScenarioCreatorAPI.LoadDefaultData
-
         readonly private static Dictionary<string, string> variableToProperty = new()
         {
-            { "ape_lab_state", "ChangeApeLabState" }
+            { "ape_lab_state", "ChangeApeLabState" },
+            { "ape_colony_state", "ChangeApeColonyState" }
         };
 
         public static Dictionary<string, RuntimeVariableInfo> runtimeModifiedVariables = new() { };
@@ -178,51 +169,72 @@ namespace SCUnshackled
                 }
 
                 instance.sortedEventVariables.Remove(specialVar);
-                string key = normalVar.CamelCaseID + "/" + normalVar.ReflectionTarget;
-                string forceKey = "";
 
-                if (variableToProperty.ContainsKey(normalVar.variable)) {
-                    normalVar.variable = variableToProperty[normalVar.variable];
-                    forceKey = normalVar.CamelCaseID + "/" + normalVar.ReflectionTarget;
-                }
+                string key = FixVariableIfNeeded(normalVar);
+                if(key == null) { continue; }
 
-                Type type = normalVar.Type;
-                if(type == null) {
-                    Utils.Print(key + " is neither a field nor a property, skipping", ConsoleLevel.Warning);
-                    continue;
-                }
-
-                string keyToUseInRuntimeModified = key;
-                if (forceKey.Length > 0)
-                {
-                    instance.variableDataSorted.Remove(key);
-                    instance.variableDataCondGlobal.Remove(key);
-                    instance.variableDataCondLocal.Remove(key);
-                    instance.variableDataExpression.Remove(key);
-                    instance.variableDataOutcome.Remove(key);
-
-                    instance.variableDataSorted[forceKey] = normalVar;
-                    instance.variableDataCondGlobal[forceKey] = normalVar;
-                    instance.variableDataCondLocal[forceKey] = normalVar;
-                    instance.variableDataExpression[forceKey] = normalVar;
-                    instance.variableDataOutcome[forceKey] = normalVar;
-
-                    keyToUseInRuntimeModified = forceKey;
-                }
-                else
-                {
-                    instance.variableDataSorted[key] = normalVar;
-                    ReplaceIfExists(instance.variableDataCondGlobal, key, normalVar);
-                    ReplaceIfExists(instance.variableDataCondLocal, key, normalVar);
-                    ReplaceIfExists(instance.variableDataExpression, key, normalVar);
-                    ReplaceIfExists(instance.variableDataOutcome, key, normalVar);
-                }
-
-                runtimeModifiedVariables[keyToUseInRuntimeModified] = new RuntimeVariableInfo(normalVar, specialVar, diseaseType);
+                runtimeModifiedVariables[key] = new RuntimeVariableInfo(normalVar, specialVar, diseaseType);
 
             }
 
+            foreach(EventVariable var in instance.sortedEventVariables)
+            {
+                if (variableToProperty.ContainsKey(var.variable))
+                {
+                    FixVariableIfNeeded(var);
+                }
+            }
+
             SetVariableLevel();
+        }
+
+        private static string FixVariableIfNeeded(EventVariable normalVar)
+        {
+            ScenarioCreatorAPI instance = ScenarioCreatorAPI.Instance;
+
+            string key = normalVar.CamelCaseID + "/" + normalVar.ReflectionTarget;
+            string forceKey = "";
+
+            if (variableToProperty.ContainsKey(normalVar.variable))
+            {
+                normalVar.variable = variableToProperty[normalVar.variable];
+                forceKey = normalVar.CamelCaseID + "/" + normalVar.ReflectionTarget;
+            }
+
+            Type type = normalVar.Type;
+            if (type == null)
+            {
+                Utils.Print(key + " is neither a field nor a property, skipping", ConsoleLevel.Warning);
+                return null;
+            }
+
+            string returnedKey = key;
+            if (forceKey.Length > 0)
+            {
+                instance.variableDataSorted.Remove(key);
+                instance.variableDataCondGlobal.Remove(key);
+                instance.variableDataCondLocal.Remove(key);
+                instance.variableDataExpression.Remove(key);
+                instance.variableDataOutcome.Remove(key);
+
+                instance.variableDataSorted[forceKey] = normalVar;
+                instance.variableDataCondGlobal[forceKey] = normalVar;
+                instance.variableDataCondLocal[forceKey] = normalVar;
+                instance.variableDataExpression[forceKey] = normalVar;
+                instance.variableDataOutcome[forceKey] = normalVar;
+
+                returnedKey = forceKey;
+            }
+            else
+            {
+                instance.variableDataSorted[key] = normalVar;
+                ReplaceIfExists(instance.variableDataCondGlobal, key, normalVar);
+                ReplaceIfExists(instance.variableDataCondLocal, key, normalVar);
+                ReplaceIfExists(instance.variableDataExpression, key, normalVar);
+                ReplaceIfExists(instance.variableDataOutcome, key, normalVar);
+            }
+
+            return returnedKey;
         }
 
         private static void ReplaceIfExists(Dictionary<string, EventVariable> dict, string key, EventVariable value)
@@ -251,6 +263,22 @@ namespace SCUnshackled
             advToggle.value = PluginConfig.enableAdvVariables.Value;
             supAdvToggle.value = PluginConfig.enableSupAdvVariables.Value;
         }
+
+    }
+
+    [HarmonyPatch]
+    public static class VariablePatches
+    {
+
+        // methods used in instructions
+        readonly private static MethodInfo stringUpper = typeof(string).GetMethod("ToUpper", new Type[] { });
+        readonly private static MethodInfo stringLength = typeof(string).GetMethod("get_Length");
+        readonly private static MethodInfo stringRemove = typeof(string).GetMethod("Remove", new Type[] { typeof(int), typeof(int) });
+        readonly private static MethodInfo stringConcat = typeof(string).GetMethod("Concat", new Type[] { typeof(string), typeof(string) });
+        readonly private static MethodInfo stringSub = typeof(string).GetMethod("Substring", new Type[] { typeof(int), typeof(int) });
+        readonly private static MethodInfo getValue = typeof(KeyValuePair<string, EventVariable>).GetMethod("get_Value");
+
+        readonly private static int Pair = 11; // address of the KeyValuePair<string, EventVariable> local variable inside of ScenarioCreatorAPI.LoadDefaultData
 
         // makes any fields CamelCase instead of lowercase
         private static void FieldCamelCaser(List<CodeInstruction> list, string varName, ILGenerator generator)
@@ -302,11 +330,7 @@ namespace SCUnshackled
             codes.InsertRange(i, newCodes);
 
         }
-    }
 
-    [HarmonyPatch]
-    public static class Patches
-    {
         [HarmonyPostfix]
         [HarmonyPatch(typeof(CDiseaseScreen), nameof(CDiseaseScreen.SetDisease))]
         public static void SetDisease_Patch(Disease diseaseData)
@@ -356,7 +380,7 @@ namespace SCUnshackled
                             if (code2.opcode == OpCodes.Bne_Un) // found a jump instruction, time to add our stuff
                             {
 
-                                VariablePatchHelper.InsertCodes(codes, j+1, generator);
+                                InsertCodes(codes, j+1, generator);
                                 return codes.AsEnumerable();
 
                             }
